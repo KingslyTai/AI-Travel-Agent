@@ -1,0 +1,6 @@
+streamlit
+openai
+google-search-results
+folium
+streamlit-folium
+python-docx
