@@ -21,3 +21,5 @@ This is a full-stack AI application powered by **DeepSeek LLM** and **Streamlit*
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
+3. Update app.py with your own API Keys.
+4. Run the app: streamlit run app.py
