@@ -9,6 +9,13 @@ This is a full-stack AI application powered by **DeepSeek LLM** and **Streamlit*
 3.  **Visualize Routes**: Generates interactive maps with driving vs. transit time comparison.
 4.  **Export Plans**: Automatically generates a formatted `.docx` Word document for the user.
 
+## 📂 Project Structure
+The application follows a modular architecture for maintainability:
+- **`app.py`**: Main entry point handling UI rendering and chat session logic (Frontend).
+- **`tools.py`**: Encapsulates core functional logic including API calls (Google Flights/Maps) and data processing (Backend).
+- **`utils.py`**: Handles utility functions such as `.docx` file generation and formatting.
+- **`config.py`**: Manages configuration, API keys, and system prompts.
+
 ## 🛠️ Tech Stack
 - **Frontend**: Streamlit
 - **AI Core**: DeepSeek (OpenAI-compatible API)
