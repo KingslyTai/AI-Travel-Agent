@@ -3,17 +3,17 @@ import json
 from openai import OpenAI
 from streamlit_folium import st_folium
 
-# 🟢 导入我们拆分好的模块
+# 🟢 导入模块
 import config
+import db
 import tools
 import utils
 
 # ==========================================
 # 1. 页面基础设置
 # ==========================================
-st.set_page_config(page_title="AI 智能旅行管家 (自主思考版)", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="AI 智能旅行管家 (Pro版)", page_icon="🌍", layout="wide")
 
-# 初始化客户端 (使用 config 中的 Key)
 try:
     client = OpenAI(api_key=config.DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 except Exception as e:
@@ -21,132 +21,276 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 3. 状态管理 (Session State)
+# 2. 状态管理
 # ==========================================
+if "user_info" not in st.session_state: st.session_state["user_info"] = None
+if "current_prefs" not in st.session_state: st.session_state["current_prefs"] = []
 
-if "chat_history" not in st.session_state:
-    st.session_state["chat_history"] = []
-if "current_chat_id" not in st.session_state:
-    st.session_state["current_chat_id"] = None
+# 初始化 sidebar_selector 防止警告
+if "sidebar_selector" not in st.session_state:
+    st.session_state["sidebar_selector"] = st.session_state["current_prefs"]
+
+# 初始化人数 (默认值)
+initial_counts = {"count_Adults": 1, "count_Kids": 0, "count_Baby": 0, "count_Elder": 0, "count_OKU": 0}
+for k, v in initial_counts.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+if "chat_history" not in st.session_state: st.session_state["chat_history"] = []
+if "current_chat_id" not in st.session_state: st.session_state["current_chat_id"] = None
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "system", "content": config.SYSTEM_PROMPT},
-        {"role": "assistant", "content": "Hello! I am your Autonomous AI Agent. Where are we going today?"}
+        {"role": "assistant", "content": "Hello! I am your AI Agent. Select your travel style on the left!"}
     ]
-if "download_buffer" not in st.session_state: 
-    st.session_state["download_buffer"] = None
-if "map_data" not in st.session_state: 
-    st.session_state["map_data"] = None
-if "traffic_data" not in st.session_state: 
-    st.session_state["traffic_data"] = None
+if "download_buffer" not in st.session_state: st.session_state["download_buffer"] = None
+if "map_data" not in st.session_state: st.session_state["map_data"] = None
+if "traffic_data" not in st.session_state: st.session_state["traffic_data"] = None
 
-# 👇 专门处理删除逻辑的函数 (保留在 app.py 方便 UI 调用)
+# ==========================================
+# 🟢 辅助函数区域
+# ==========================================
+
+# 1. 同步历史记录
+def sync_history_to_db():
+    if st.session_state["user_info"]:
+        email = st.session_state["user_info"]["email"]
+        history = st.session_state["chat_history"]
+        db.save_chat_history(email, history)
+
+# 2. 删除历史记录
 def delete_chat_history(index):
     if 0 <= index < len(st.session_state["chat_history"]):
         st.session_state["chat_history"].pop(index)
-        
         if st.session_state["current_chat_id"] == index:
             st.session_state["current_chat_id"] = None
-            st.session_state["messages"] = [
-                {"role": "system", "content": config.SYSTEM_PROMPT},
-                {"role": "assistant", "content": "Chat deleted."}
-            ]
+            st.session_state["messages"] = [{"role": "system", "content": config.SYSTEM_PROMPT},{"role": "assistant", "content": "Chat deleted."}]
             st.session_state["download_buffer"] = None
-            st.session_state["map_data"] = None 
+            st.session_state["map_data"] = None
             st.session_state["traffic_data"] = None
         elif st.session_state["current_chat_id"] is not None and st.session_state["current_chat_id"] > index:
             st.session_state["current_chat_id"] -= 1
+        sync_history_to_db()
+
+# 🟢 [关键修复] New Chat 的逻辑提取为回调函数
+def handle_new_chat():
+    """
+    New Chat 按钮的回调函数。
+    在这里修改 sidebar_selector 是安全的，因为它在下一次渲染前执行。
+    """
+    # A. 尝试保存当前对话
+    if len(st.session_state["messages"]) > 2:
+        user_first_msg = "New Chat"
+        for msg in st.session_state["messages"]:
+            if isinstance(msg, dict) and msg["role"] == "user":
+                user_first_msg = msg.get("content", "")[:15] + "..."
+                break
+            elif not isinstance(msg, dict) and msg.role == "user":
+                user_first_msg = msg.content[:15] + "..."
+                break     
+        
+        # --- 🧠 AI 自动学习 (在回调里执行) ---
+        if st.session_state["user_info"]:
+            # 注意：回调里不建议用 st.spinner，我们直接跑
+            learned_tags = tools.analyze_preferences_from_chat(st.session_state["messages"])
+            if learned_tags:
+                email = st.session_state["user_info"]["email"]
+                new_all_tags = db.merge_user_preferences(email, learned_tags)
+                if new_all_tags:
+                    # ✅ 这里修改 state 是完全安全的！
+                    st.session_state["user_info"]["preferences"] = new_all_tags
+                    st.session_state["current_prefs"] = new_all_tags
+                    st.session_state["sidebar_selector"] = new_all_tags
+                    print(f"DEBUG: AI Learned new tags: {learned_tags}") # 这里的 toast 可能看不到，改用 print 后台调试
+
+        # 保存到 History 列表
+        if st.session_state["current_chat_id"] is None:
+            st.session_state["chat_history"].insert(0, {"title": user_first_msg, "messages": st.session_state["messages"], "itinerary_content": None})
+        
+        sync_history_to_db()
+    
+    # B. 重置对话状态
+    st.session_state["messages"] = [{"role": "system", "content": config.SYSTEM_PROMPT}, {"role": "assistant", "content": "Hello! Where are we going today?"}]
+    st.session_state["current_chat_id"] = None
+    st.session_state["download_buffer"] = None
+    st.session_state["map_data"] = None 
+    st.session_state["traffic_data"] = None 
 
 # ==========================================
-# 🔴 Sidebar UI (侧边栏)
+# 🟢 核心逻辑：UI 辅助函数
+# ==========================================
+def render_counter(label, session_key, min_val=0):
+    c1, c2, c3, c4 = st.columns([2.5, 1, 0.8, 1])
+    with c1: st.write(f"**{label}**") 
+    with c2:
+        if st.button("➖", key=f"dec_{session_key}"):
+            if st.session_state[session_key] > min_val:
+                st.session_state[session_key] -= 1
+                st.rerun() 
+    with c3: st.markdown(f"<div style='text-align:center; padding-top:5px; font-weight:bold;'>{st.session_state[session_key]}</div>", unsafe_allow_html=True)
+    with c4:
+        if st.button("➕", key=f"inc_{session_key}"):
+            st.session_state[session_key] += 1
+            st.rerun() 
+
+def auto_sync_style():
+    new_prefs = st.session_state.get("sidebar_selector", [])
+    st.session_state["current_prefs"] = new_prefs
+    if st.session_state["user_info"]:
+        email = st.session_state["user_info"]["email"]
+        old_prefs = st.session_state["user_info"].get("preferences", [])
+        if set(new_prefs) != set(old_prefs):
+            db.update_preferences(email, new_prefs)
+            st.session_state["user_info"]["preferences"] = new_prefs
+
+# ==========================================
+# 🟢 登录弹窗
+# ==========================================
+@st.dialog("🔐 账户中心 (Account)")
+def login_dialog():
+    if st.session_state["user_info"]:
+        st.success(f"当前已登录: {st.session_state['user_info']['email']}")
+        
+        if st.button("🚪 退出登录 (Logout)", type="primary", use_container_width=True):
+            sync_history_to_db()
+            st.session_state["user_info"] = None
+            st.session_state["current_prefs"] = []
+            st.session_state["sidebar_selector"] = [] 
+            st.session_state["chat_history"] = []
+            st.session_state["messages"] = [{"role": "system", "content": config.SYSTEM_PROMPT}, {"role": "assistant", "content": "Hello! Where are we going today?"}]
+            st.session_state["current_chat_id"] = None
+            for k in initial_counts.keys(): st.session_state[k] = initial_counts[k]
+            st.rerun()
+    else:
+        tab1, tab2 = st.tabs(["Login", "Register"])
+        with tab1: 
+            email_in = st.text_input("Email", key="d_l_email")
+            pass_in = st.text_input("Password", type="password", key="d_l_pass")
+            if st.button("登录 (Sign In)", use_container_width=True):
+                user, msg = db.authenticate_user(email_in, pass_in)
+                if user:
+                    st.session_state["user_info"] = user
+                    prefs = user.get("preferences", [])
+                    st.session_state["current_prefs"] = prefs
+                    st.session_state["sidebar_selector"] = prefs 
+                    try:
+                        history = db.load_chat_history(user["email"])
+                        st.session_state["chat_history"] = history
+                    except: pass
+                    st.session_state["messages"] = [{"role": "system", "content": config.SYSTEM_PROMPT}, {"role": "assistant", "content": "Hello! Welcome back! Where are we going today?"}]
+                    st.session_state["current_chat_id"] = None
+                    st.session_state["download_buffer"] = None
+                    st.session_state["map_data"] = None 
+                    st.session_state["traffic_data"] = None 
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+        with tab2:
+            new_email = st.text_input("New Email", key="d_r_email")
+            new_pass = st.text_input("New Password", type="password", key="d_r_pass")
+            travel_tags = ["🍱 美食 (Foodie)", "💆‍♂️ 放松 (Relax)", "🌲 大自然 (Nature)", "🛍️ 购物 (Shopping)", "🏛️ 历史 (History)", "🎒 穷游 (Budget)", "💎 奢华 (Luxury)", "👨‍👩‍👧‍👦 亲子 (Family)", "📸 拍照打卡 (Insta-worthy)"]
+            reg_prefs = st.multiselect("Select Tags", travel_tags, default=st.session_state.get("current_prefs", []))
+            if st.button("注册 (Create Account)", use_container_width=True):
+                if new_email and new_pass:
+                    success, msg = db.create_user(new_email, new_pass, reg_prefs)
+                    if success: st.success("✅ 注册成功！请切换到 Login 页面进行登录。")
+                    else: st.error(msg)
+                else: st.warning("Please fill all fields.")
+
+# ==========================================
+# 🟢 主界面
+# ==========================================
+st.title("🧠 My AI Travel Agent")
+st.caption("Your personalized trip planner powered by AI")
+st.markdown("---")
+
+# ==========================================
+# 🔴 Sidebar UI
 # ==========================================
 with st.sidebar:
-    st.title("🗂️ Control Panel")
+    if st.session_state["user_info"]:
+        user_name = st.session_state["user_info"]["email"].split("@")[0]
+        if st.button(f"👤 {user_name} (Account)", use_container_width=True):
+            login_dialog()
+    else:
+        if st.button("🔐 Login / Register", type="primary", use_container_width=True):
+            login_dialog()
     
-    if st.button("➕ New Chat", use_container_width=True, type="primary"):
-        # 自动保存旧对话
-        if len(st.session_state["messages"]) > 2:
-            user_first_msg = "New Chat"
-            for msg in st.session_state["messages"]:
-                if msg["role"] == "user":
-                    content = msg.get("content", "")
-                    user_first_msg = content[:15] + "..."
-                    break
-            
-            if st.session_state["current_chat_id"] is None:
-                st.session_state["chat_history"].insert(0, {
-                    "title": user_first_msg,
-                    "messages": st.session_state["messages"],
-                    "itinerary_content": None
-                })
-        
-        # 重置 (使用 config 中的 prompt)
-        st.session_state["messages"] = [
-            {"role": "system", "content": config.SYSTEM_PROMPT},
-            {"role": "assistant", "content": "Hello! Where are we going today?"}
-        ]
-        st.session_state["current_chat_id"] = None
-        st.session_state["download_buffer"] = None
-        st.session_state["map_data"] = None 
-        st.session_state["traffic_data"] = None 
-        st.rerun()
-
-    # 下载按钮
-    if st.session_state.get("download_buffer"):
-        st.markdown("---")
-        st.success("✅ 行程单已生成！")
-        st.download_button(
-            label="📥 下载 Word 行程单 (.docx)",
-            data=st.session_state["download_buffer"],
-            file_name="My_Trip_Plan.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            type="primary"
-        )
+    st.markdown("---") 
+    st.subheader("🛠️ Trip Settings")
+    
+    travel_tags = ["🍱 美食 (Foodie)", "💆‍♂️ 放松 (Relax)", "🌲 大自然 (Nature)", "🛍️ 购物 (Shopping)", "🏛️ 历史 (History)", "🎒 穷游 (Budget)", "💎 奢华 (Luxury)", "👨‍👩‍👧‍👦 亲子 (Family)", "📸 拍照打卡 (Insta-worthy)"]
+    st.multiselect("Style (风格)", travel_tags, key="sidebar_selector", on_change=auto_sync_style)
+    
+    st.markdown("#### 👥 Group Size")
+    with st.container():
+        render_counter("Adults", "count_Adults", min_val=1)
+        render_counter("Kids (4-12)", "count_Kids")
+        render_counter("Baby (0-3)", "count_Baby")
+        render_counter("Elder (60+)", "count_Elder")
+        render_counter("OKU (Disabled)", "count_OKU")
 
     st.markdown("---")
-    st.subheader("🕒 History")
-
-    if not st.session_state["chat_history"]:
-        st.caption("No history yet")
     
-    # 历史记录列表
-    for i, chat in enumerate(st.session_state["chat_history"]):
-        col1, col2 = st.columns([0.85, 0.15]) 
-        with col1:
-            if st.button(f"💬 {chat['title']}", key=f"hist_{i}", use_container_width=True):
-                if len(st.session_state["messages"]) > 2 and st.session_state["current_chat_id"] is None:
-                     temp_title = "Unsaved"
-                     for m in st.session_state["messages"]:
-                         if m["role"] == "user":
-                             temp_title = m.get("content", "")[:15] + "..."
-                             break
-                     st.session_state["chat_history"].insert(0, {
-                         "title": temp_title, 
-                         "messages": st.session_state["messages"],
-                         "itinerary_content": None
-                     })
+    # 🟢 [修改] 只有这一行了！逻辑移到了 handle_new_chat 回调函数里
+    st.button("➕ New Chat", use_container_width=True, type="primary", on_click=handle_new_chat)
 
-                st.session_state["messages"] = chat["messages"]
-                st.session_state["current_chat_id"] = i
-                
-                # 恢复内容 (调用 utils 中的 create_word_doc)
-                saved_content = chat.get("itinerary_content")
-                if saved_content:
-                    st.session_state["download_buffer"] = utils.create_word_doc(saved_content)
-                else:
-                    st.session_state["download_buffer"] = None
-                
-                st.rerun()
-        
-        with col2:
-            st.button("🗑️", key=f"del_{i}", on_click=delete_chat_history, args=(i,))
+    if st.session_state.get("download_buffer"):
+        st.download_button("📥 Download .docx", data=st.session_state["download_buffer"], file_name="Trip_Plan.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary")
+
+    if st.session_state["chat_history"]:
+        st.caption("History")
+        for i, chat in enumerate(st.session_state["chat_history"]):
+            col1, col2 = st.columns([0.8, 0.2]) 
+            with col1:
+                if st.button(f"💬 {chat['title']}", key=f"h_{i}"):
+                     st.session_state["messages"] = chat["messages"]
+                     st.session_state["current_chat_id"] = i
+                     saved_content = chat.get("itinerary_content")
+                     st.session_state["download_buffer"] = utils.create_word_doc(saved_content) if saved_content else None
+                     st.rerun()
+            with col2:
+                st.button("✖", key=f"d_{i}", on_click=delete_chat_history, args=(i,))
 
 # ==========================================
-# 5. 聊天主界面
+# 🧠 记忆注入
 # ==========================================
-st.title("🧠 My AI Travel Agent (Map Edition)")
+curr_style = st.session_state.get("current_prefs", [])
+curr_group = {
+    "Adults": st.session_state["count_Adults"],
+    "Kids": st.session_state["count_Kids"],
+    "Baby": st.session_state["count_Baby"],
+    "Elder": st.session_state["count_Elder"],
+    "OKU": st.session_state["count_OKU"]
+}
 
-# 1. 聊天记录显示
+is_group_set = (curr_group["Kids"]>0 or curr_group["Baby"]>0 or curr_group["Elder"]>0 or curr_group["OKU"]>0 or curr_group["Adults"]>1)
+
+if curr_style or is_group_set:
+    style_str = ", ".join(curr_style) if curr_style else "Not specified"
+    group_str_list = [f"{k}: {v}" for k,v in curr_group.items() if v > 0]
+    group_str = ", ".join(group_str_list)
+    constraints = []
+    if curr_group["OKU"] > 0: constraints.append("MUST be Wheelchair Accessible.")
+    if curr_group["Elder"] > 0: constraints.append("Low physical intensity.")
+    if curr_group["Baby"] > 0: constraints.append("Stroller friendly, nursing breaks.")
+    if curr_group["Kids"] > 0: constraints.append("Include kids activities.")
+    constraints_str = " ".join(constraints) if constraints else "None"
+
+    memory_block = f"""
+    \n\n[📋 USER CONTEXT (Updated Settings)]
+    - Travel Style: {style_str}
+    - Group Composition: {group_str}
+    - SPECIAL CONSTRAINTS: {constraints_str}
+    (INSTRUCTION: Use these constraints for the NEXT response. Do not reply to this system update.)
+    """
+    if st.session_state["messages"] and isinstance(st.session_state["messages"][0], dict) and st.session_state["messages"][0]["role"] == "system":
+        st.session_state["messages"][0]["content"] = config.SYSTEM_PROMPT + memory_block
+
+# ==========================================
+# 3. 主界面内容
+# ==========================================
 for msg in st.session_state["messages"]:
     if isinstance(msg, dict):
         role = msg["role"]
@@ -154,90 +298,65 @@ for msg in st.session_state["messages"]:
     else:
         role = msg.role
         content = msg.content
-    
     if role == "system": continue
-
     if content:
-        if role == "user": st.chat_message("user").write(content)
-        elif role == "assistant": st.chat_message("assistant").write(content)
+        with st.chat_message(role): st.write(content)
 
-# [UI] 地图显示区域
 if st.session_state.get("map_data"):
     with st.container():
-        st.markdown("### 🗺️ 路线地图 & 交通时间")
+        st.markdown("### 🗺️ Route Map")
         if st.session_state.get("traffic_data"):
-            with st.expander("🚗 查看详细交通耗时 (驾车 vs 公交)", expanded=True):
-                st.markdown(st.session_state["traffic_data"])
-        try:
-            from streamlit_folium import st_folium
-            st_folium(st.session_state["map_data"], width=700, height=400, returned_objects=[])
-        except ImportError:
-            st.error("⚠️ 缺少地图组件")
+            with st.expander("🚗 Traffic Details", expanded=True): st.markdown(st.session_state["traffic_data"])
+        try: st_folium(st.session_state["map_data"], width=700, height=400, returned_objects=[])
+        except: pass
 
-# ==========================================
-# 核心逻辑
-# ==========================================
-
-# 2. 接收用户输入
-if prompt := st.chat_input("Say something..."):
+if prompt := st.chat_input("Plan my trip to..."):
     st.session_state["messages"].append({"role": "user", "content": prompt})
-    
     if st.session_state["current_chat_id"] is None:
-        st.session_state["chat_history"].insert(0, {
-            "title": prompt[:15] + "...", 
-            "messages": st.session_state["messages"],
-            "itinerary_content": None
-        })
+        st.session_state["chat_history"].insert(0, {"title": prompt[:15] + "...", "messages": st.session_state["messages"], "itinerary_content": None})
         st.session_state["current_chat_id"] = 0
     else:
-        st.session_state["chat_history"][st.session_state["current_chat_id"]]["messages"] = st.session_state["messages"]
-    
+        if st.session_state["current_chat_id"] >= len(st.session_state["chat_history"]):
+            st.session_state["chat_history"].insert(0, {"title": prompt[:15] + "...", "messages": st.session_state["messages"], "itinerary_content": None})
+            st.session_state["current_chat_id"] = 0
+        else:
+            st.session_state["chat_history"][st.session_state["current_chat_id"]]["messages"] = st.session_state["messages"]
     st.rerun()
 
-# 3. AI 思考循环
-if st.session_state["messages"] and st.session_state["messages"][-1]["role"] == "user":
+if st.session_state["messages"]:
+    last_msg = st.session_state["messages"][-1]
+    last_role = last_msg["role"] if isinstance(last_msg, dict) else last_msg.role
     
-    with st.chat_message("assistant"):
-        status_container = st.status("🧠 Agent is thinking...", expanded=True)
-        messages = st.session_state["messages"]
-        
-        while True:
-            # 🟢 使用 tools.tools_list
-            response = client.chat.completions.create(model="deepseek-chat", messages=messages, tools=tools.tools_list)
-            msg = response.choices[0].message
-            
-            if msg.tool_calls:
-                messages.append(msg)
-                should_rerun = False 
-                
-                for tool in msg.tool_calls:
-                    fn, args = tool.function.name, json.loads(tool.function.arguments)
-                    status_container.write(f"👉 Action: **{fn}**")
-                    
-                    res = None
-                    # 🟢 修改调用方式：tools.函数名
-                    if fn == "search_flights": res = tools.search_flights(args["origin"], args["destination"], args["date"], args.get("return_date"))
-                    elif fn == "search_hotels": res = tools.search_hotels(args["city"], args["check_in_date"], args.get("check_out_date"), args.get("adults", 1))
-                    elif fn == "search_attractions": res = tools.search_attractions(args["city"], args.get("keyword"))
-                    elif fn == "search_restaurants": res = tools.search_restaurants(args["city"], args.get("food_type"))
-                    elif fn == "search_general_web": res = tools.search_general_web(args["query"])
-                    elif fn == "save_itinerary": res = tools.save_itinerary(args["content"]); status_container.write("💾 Saved!")
-                    elif fn == "generate_map_with_traffic": 
-                        res = tools.generate_map_with_traffic(args["locations_list"])
-                        status_container.write("🗺️ Map Drawn!")
-                        should_rerun = True 
-                    
-                    messages.append({"role": "tool", "tool_call_id": tool.id, "content": str(res)})
-                
-                if should_rerun:
-                    st.rerun()
-
-            else:
-                final_content = msg.content
-                status_container.update(label="✅ Response Ready", state="complete", expanded=False)
-                st.markdown(final_content)
-                st.session_state["messages"].append({"role": "assistant", "content": final_content})
-                
-                if st.session_state["current_chat_id"] is not None:
-                     st.session_state["chat_history"][st.session_state["current_chat_id"]]["messages"] = st.session_state["messages"]
-                break
+    if last_role == "user":
+        with st.chat_message("assistant"):
+            status_container = st.status("🧠 Agent is thinking...", expanded=True)
+            messages = st.session_state["messages"]
+            while True:
+                response = client.chat.completions.create(model="deepseek-chat", messages=messages, tools=tools.tools_list)
+                msg = response.choices[0].message
+                if msg.tool_calls:
+                    messages.append(msg)
+                    should_rerun = False 
+                    for tool in msg.tool_calls:
+                        fn, args = tool.function.name, json.loads(tool.function.arguments)
+                        status_container.write(f"👉 Action: **{fn}**")
+                        res = None
+                        if fn == "search_flights": res = tools.search_flights(args["origin"], args["destination"], args["date"], args.get("return_date"))
+                        elif fn == "search_hotels": res = tools.search_hotels(args["city"], args["check_in_date"], args.get("check_out_date"), args.get("adults", 1))
+                        elif fn == "search_attractions": res = tools.search_attractions(args["city"], args.get("keyword"))
+                        elif fn == "search_restaurants": res = tools.search_restaurants(args["city"], args.get("food_type"))
+                        elif fn == "search_general_web": res = tools.search_general_web(args["query"])
+                        elif fn == "save_itinerary": res = tools.save_itinerary(args["content"]); status_container.write("💾 Saved!")
+                        elif fn == "generate_map_with_traffic": res = tools.generate_map_with_traffic(args["locations_list"]); status_container.write("🗺️ Map Drawn!"); should_rerun = True 
+                        messages.append({"role": "tool", "tool_call_id": tool.id, "content": str(res)})
+                    if should_rerun: st.rerun()
+                else:
+                    final_content = msg.content
+                    status_container.update(label="✅ Response Ready", state="complete", expanded=False)
+                    st.markdown(final_content)
+                    st.session_state["messages"].append({"role": "assistant", "content": final_content})
+                    if st.session_state["current_chat_id"] is not None: 
+                        if st.session_state["current_chat_id"] < len(st.session_state["chat_history"]):
+                            st.session_state["chat_history"][st.session_state["current_chat_id"]]["messages"] = st.session_state["messages"]
+                    sync_history_to_db()
+                    break

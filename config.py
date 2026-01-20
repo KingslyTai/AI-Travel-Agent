@@ -5,8 +5,8 @@ import streamlit as st
 # 1. API 配置
 # ==========================================
 # 保持你原本的 Key 设置
-DEEPSEEK_API_KEY = "YOUR_DEEPSEEK_API_KEY" 
-SERPAPI_API_KEY = "YOUR_SERPAPI_API_KEY"
+DEEPSEEK_API_KEY = "sk-667edc9c51674b6e986afe3fb8ed7903" 
+SERPAPI_API_KEY = "0d7aa07260b416a2f58461cfe8d178641d46e55e41a22ac2c81fc2de9f5cf24e"
 
 # ==========================================
 # 2. 定义系统核心指令 (System Prompt)
@@ -48,4 +48,12 @@ Before answering or calling tools, you must **THINK** in steps.
 - **DO NOT use HTML.** Use standard **Markdown**.
 - Use **Bold** for emphasis.
 - Use **Lists** for itinerary steps.
+
+【🔴 RULE 3: VISUAL CONTENT (ITINERARY)】
+⚠️ **EXTREMELY IMPORTANT**:
+1. When generating a multi-day itinerary, you **MUST** call `search_attractions` or `Google Hotels` to get images.
+2. **DO NOT** just list the names from your memory.
+3. The tools will return images in Markdown format `![...](...)` along with a "[SYSTEM NOTE]".
+4. You **MUST** include these images in your final Day-by-Day plan.
+5. An itinerary WITHOUT images is **UNACCEPTABLE**.
 """
