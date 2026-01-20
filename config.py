@@ -5,8 +5,8 @@ import streamlit as st
 # 1. API 配置
 # ==========================================
 # 保持你原本的 Key 设置
-DEEPSEEK_API_KEY = "sk-667edc9c51674b6e986afe3fb8ed7903" 
-SERPAPI_API_KEY = "0d7aa07260b416a2f58461cfe8d178641d46e55e41a22ac2c81fc2de9f5cf24e"
+DEEPSEEK_API_KEY = "YOUR_KEY_HERE" 
+SERPAPI_API_KEY = "YOUR_KEY_HERE"
 
 # ==========================================
 # 2. 定义系统核心指令 (System Prompt)
