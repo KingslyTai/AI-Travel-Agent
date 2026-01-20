@@ -3,4 +3,5 @@ openai
 google-search-results
 folium
 streamlit-folium
+firebase-admin
 python-docx
