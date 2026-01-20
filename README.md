@@ -1,32 +1,93 @@
-# AI-Travel-Agent
-An autonomous AI agent that plans travel itineraries, visualizes routes on maps, and generates Word documents
-# 🧠 Autonomous AI Travel Agent
+# 🌍 Autonomous AI Travel Agent
 
-## 📖 Overview
-This is a full-stack AI application powered by **DeepSeek LLM** and **Streamlit**. It acts as an autonomous travel planner that can:
-1.  **Plan Itineraries**: Uses Chain-of-Thought (CoT) reasoning to break down travel plans.
-2.  **Real-Time Data**: Integrates **Google Flights & Maps APIs** (via SerpApi) to fetch real prices and locations.
-3.  **Visualize Routes**: Generates interactive maps with driving vs. transit time comparison.
-4.  **Export Plans**: Automatically generates a formatted `.docx` Word document for the user.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B)
+![AI](https://img.shields.io/badge/AI-DeepSeek%20LLM-green)
+![Architecture](https://img.shields.io/badge/Pattern-Function%20Calling-purple)
+
+An intelligent, full-stack travel planning assistant powered by **DeepSeek LLM** and **Function Calling**. 
+
+Unlike traditional chatbots, this agent possesses **autonomy**: it intelligently analyzes user intent, executes external tools (Maps, Flights, Hotels) in real-time, and orchestrates complex travel data into a visualized itinerary.
+
+---
+
+## 🚀 Key Capabilities
+
+### 🧠 1. Autonomous Reasoning (Function Calling)
+The core of this agent is its ability to "think" before acting. It uses **LLM Function Calling** to dynamically select the right tool for the job—whether it's searching for live flight data or calculating traffic routes—without hard-coded decision trees.
+
+### 🗺️ 2. Dynamic Route Visualization
+Instead of static text, the agent generates interactive maps using **Folium** and **AntPath**. It visualizes the entire day's itinerary with animated traffic flow indicators, providing a clear spatial understanding of the trip.
+
+### ✈️ 3. Real-Time Data Grounding
+Integrates **Google Flights, Hotels, and Maps APIs** (via SerpApi) to fetch up-to-the-minute pricing, ratings, and location data, ensuring the itinerary is actionable and accurate.
+
+### 💾 4. Secure Cloud Persistence
+Built with **Firebase Authentication** and **Firestore**, allowing users to securely log in, save their chat history, and resume planning sessions across devices.
+
+### 📄 5. Automated Itinerary Export
+One-click generation of formatted **.docx** travel documents, summarizing the entire AI-generated plan for offline use.
+
+---
+
+## 🛠️ Tech Stack & Architecture
+
+| Component | Technology Used |
+| :--- | :--- |
+| **Frontend UI** | Streamlit (Python-based Web Framework) |
+| **LLM Engine** | DeepSeek Chat (OpenAI-Compatible API) |
+| **Agent Logic** | Function Calling (Tool Use / ReAct Pattern) |
+| **Backend DB** | Firebase (Auth & Cloud Firestore) |
+| **External APIs** | SerpApi (Google Search Engine Results) |
+| **Visualization** | Folium, Streamlit-Folium |
+
+---
+
+## 📦 Installation & Setup
+
+1.  **Clone the repository**
+    ```bash
+    git clone [https://github.com/KingslyTai/Autonomous-AI-Travel-Agent.git](https://github.com/KingslyTai/Autonomous-AI-Travel-Agent.git)
+    cd Autonomous-AI-Travel-Agent
+    ```
+
+2.  **Install dependencies**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Configuration**
+    * Create a `config.py` file in the root directory.
+    * Add your API keys (DeepSeek, SerpApi, Firebase):
+        ```python
+        DEEPSEEK_API_KEY = "your_key_here"
+        SERPAPI_API_KEY = "your_key_here"
+        # Firebase credentials...
+        ```
+
+4.  **Run the Application**
+    ```bash
+    streamlit run app.py
+    ```
+
+---
 
 ## 📂 Project Structure
-The application follows a modular architecture for maintainability:
-- **`app.py`**: Main entry point handling UI rendering and chat session logic (Frontend).
-- **`tools.py`**: Encapsulates core functional logic including API calls (Google Flights/Maps) and data processing (Backend).
-- **`utils.py`**: Handles utility functions such as `.docx` file generation and formatting.
-- **`config.py`**: Manages configuration, API keys, and system prompts.
 
-## 🛠️ Tech Stack
-- **Frontend**: Streamlit
-- **AI Core**: DeepSeek (OpenAI-compatible API)
-- **APIs**: SerpApi (Google Search Engine Results)
-- **Visualization**: Folium (Maps)
-- **File Handling**: python-docx
+* `app.py`: Main application entry point handling UI and session state.
+* `tools.py`: Contains the **Tool Definitions** and **Function Calling** logic (The "Brain").
+* `db.py`: Handles Firebase interactions for user management.
+* `utils.py`: Utility functions for document generation.
 
-## 🚀 How to Run
-1. Clone the repository.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-3. Update app.py with your own API Keys.
-4. Run the app: streamlit run app.py
+---
+
+## 👨‍💻 Author
+
+**Tai Wen Han**
+* **Role**: Software Engineer | AI Application Developer
+* **Email**: wenhan.tai@gmail.com
+* **GitHub**: [Kingsly Tai](https://github.com/KingslyTai)
+
+---
+
+*Project developed to demonstrate advanced LLM integration and Full-Stack Engineering capabilities.*
